@@ -18,7 +18,7 @@ class convolution_pose(Model):
     def __init__(self,kernel,n_filter,pad,activate):
         super(convolution_pose,self).__init__()
         self.conv1 = Conv2D(n_filter,kernel,padding=pad,activation=activate)
-        self.conv2 = Conv2D(n_filter,kernel,padding=pad,activation=activate)
+        self.conv2 = Conv2D(n_filter,kernel,strides=(2,2),padding='same',activation=activate)
         self.activation = tf.keras.layers.ReLU()
     def call(self,input_tensor):
         x = self.conv1(input_tensor)
@@ -29,7 +29,7 @@ class convolution_pose(Model):
 class pose_est(Model):
     def __init__(self):
         super(pose_est,self).__init__()
-        padding = 'valid'
+        padding = 'same'
         self.conv_layer1 = convolution_pose((7,7),16,pad=padding,activate='relu')
         self.conv_layer2 = convolution_pose((5,5),32,pad=padding,activate='relu')
         self.conv_layer3 = convolution_pose((3,3),64,pad=padding,activate='relu')
@@ -73,5 +73,40 @@ class pose_est(Model):
         r = self.denser2(r)
         r = self.denser3(r)
         
-        return x,r
+        return t,r
 
+"""
+Not require but if you want to train the network separately than u can use this
+code
+class trans_est(Model):
+    def __init__(self):
+        super(self,trans_est).__init__()
+        pe = pose_estimation()
+        self.denset1 = Dense(512,activation='relu')
+        self.denset2 = Dense(512,activation='relu')
+        self.denset3 = Dense(3)
+
+    def call(self,input_tensor):
+        x= pe(input_tensor)
+        t = self.dense1(x)
+        t = self.dense2(t)
+        t = self.dense3(t)
+
+        return t
+
+class rot_est(Model):
+    def __init__(self):
+        super(self,trans_est).__init__()
+        pe = pose_estimation()
+        self.dense1 = Dense(512,activation='relu')
+        self.dense2 = Dense(512,activation='relu')
+        self.dense3 = Dense(3)
+
+    def call(self,input_tensor):
+        x = pe(input_tensor)
+        r = self.dense1(x)
+        r = self.dense2(r)
+        r = self.dense3(r)
+
+        return r
+"""

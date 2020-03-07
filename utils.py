@@ -114,65 +114,174 @@ def generate_image_left(img, disp):
 def generate_image_right(img, disp):
         return bilinear_sampler_1d_h(img, disp)
 
-##depth estimation loss spatial 
-def dept_est_loss(depth_prediction_left,depth_prediction_right,left_image,right_image):
-    B = 10 #base length (cm)
-    f = .04 #focal length (cm)
-    
-    #there is the 4 disparity maps 2 for each stero image (i.e right stereo image and left stereo image)
-    ##k and k+1 disparities for left image
-    ##left image generates left disparity 
-    left_disparity_k = depth_prediction_left[:,:,:,0] #(B*f)/depth_prediction_left[:,:,:,0] currently assuming the depth_prediction as disparity
-    left_disp_batch_num  = depth_prediction_left.shape[0]
-    left_disp_height = depth_prediction_left.shape[1]
-    left_disp_width = depth_prediction_left.shape[2]
-    left_disparity_k = tf.reshape(left_disparity_k,[left_disp_batch_num,left_disp_height,left_disp_width,1])
-    #print(left_disparity_k.shape)
-    #tf.print(left_disparity_k)
-    #left_disparity_k1 = (B*f)/depth_prediction_left[:,:,:,1]
 
-    ##k and k+1 disparities for right image
-    ##generate the right image from the right disparity
-    #right_disparity_k1 = (B*f)/depth_prediction_right[:,:,:,1]
-    right_disparity_k = depth_prediction_right[:,:,:,0]#(B*f)/depth_prediction_right[:,:,:,0]
-    right_disp_batch_num  = depth_prediction_right.shape[0]
-    right_disp_height = depth_prediction_right.shape[1]
-    right_disp_width = depth_prediction_right.shape[2]
-    right_disparity_k = tf.reshape(right_disparity_k,[right_disp_batch_num,right_disp_height,right_disp_width,1])
-    #print(right_disparity_k.shape)
-    #tf.print(right_disparity_k)
-    
-    ##take the current frame from the image means rather than taking all the channels just take the first 3 channel
-    imageleft_k = tf.slice(left_image,[0,0,0,0],[-1,-1,-1,3]) #image right k
-    imageright_k = tf.slice(right_image,[0,0,0,0],[-1,-1,-1,3]) #image right k
+def euler2mat(z, y, x):
+  """Converts euler angles to rotation matrix
+   TODO: remove the dimension for 'N' (deprecated for converting all source
+         poses altogether)
+   Reference: https://github.com/pulkitag/pycaffe-utils/blob/master/rot_utils.py#L174
+  Args:
+      z: rotation angle along z axis (in radians) -- size = [B, N]
+      y: rotation angle along y axis (in radians) -- size = [B, N]
+      x: rotation angle along x axis (in radians) -- size = [B, N]
+  Returns:
+      Rotation matrix corresponding to the euler angles -- size = [B, N, 3, 3]
+  """
+  B = tf.shape(z)[0]
+  N = 1
+  z = tf.clip_by_value(z, -np.pi, np.pi)
+  y = tf.clip_by_value(y, -np.pi, np.pi)
+  x = tf.clip_by_value(x, -np.pi, np.pi)
 
-    imageleft_k1 = tf.slice(left_image,[0,0,0,3],[-1,-1,-1,-1])#image left k+1
-    imageright_k1 = tf.slice(right_image,[0,0,0,3],[-1,-1,-1,-1])#image right k+1
+  # Expand to B x N x 1 x 1
+  z = tf.expand_dims(tf.expand_dims(z, -1), -1)
+  y = tf.expand_dims(tf.expand_dims(y, -1), -1)
+  x = tf.expand_dims(tf.expand_dims(x, -1), -1)
 
+  zeros = tf.zeros([B, N, 1, 1])
+  ones  = tf.ones([B, N, 1, 1])
 
-    ##spatial loss
-    left_generate_image = generate_image_left(right_image,right_disparity_k)
-    right_generate_image = generate_image_right(left_image,left_disparity_k)
-    ##photometric_loss(left_image,right_generate_image,right_image,left_generate_image):
-    lambd_s = 0.5 #weight is used for ssim and l1 loss
-    loss_ssim_left = tf.reduce_mean(SSIM(left_image,left_generate_image))
-    loss_l1_left = (tf.reduce_mean(tf.abs(left_image-left_generate_image)))
-    loss_left = lambd_s*loss_ssim_left+(1-lambd_s)*loss_l1_left
+  cosz = tf.cos(z)
+  sinz = tf.sin(z)
+  rotz_1 = tf.concat([cosz, -sinz, zeros], axis=3)
+  rotz_2 = tf.concat([sinz,  cosz, zeros], axis=3)
+  rotz_3 = tf.concat([zeros, zeros, ones], axis=3)
+  zmat = tf.concat([rotz_1, rotz_2, rotz_3], axis=2)
 
-    loss_ssim_right = tf.reduce_mean(SSIM(right_image,right_generate_image))   
-    loss_l1_right = (tf.reduce_mean(tf.abs(right_image-right_generate_image)))
-    loss_right = lambd_s*loss_ssim_right+(1-lambd_s)*loss_l1_right
+  cosy = tf.cos(y)
+  siny = tf.sin(y)
+  roty_1 = tf.concat([cosy, zeros, siny], axis=3)
+  roty_2 = tf.concat([zeros, ones, zeros], axis=3)
+  roty_3 = tf.concat([-siny,zeros, cosy], axis=3)
+  ymat = tf.concat([roty_1, roty_2, roty_3], axis=2)
 
-    photo_loss = loss_left+loss_right
-    
-    ##Disparity_consistency_loss or #LR consistency loss
-    left_to_right = generate_image_right(left_disparity_k,right_disparity_k)
-    right_to_left = generate_image_left(right_disparity_k,left_disparity_k)
+  cosx = tf.cos(x)
+  sinx = tf.sin(x)
+  rotx_1 = tf.concat([ones, zeros, zeros], axis=3)
+  rotx_2 = tf.concat([zeros, cosx, -sinx], axis=3)
+  rotx_3 = tf.concat([zeros, sinx, cosx], axis=3)
+  xmat = tf.concat([rotx_1, rotx_2, rotx_3], axis=2)
 
-    loss_disp_left = tf.reduce_mean(tf.abs(left_to_right-right_disparity_k))
-    loss_disp_right = tf.reduce_mean(tf.abs(right_to_left-left_disparity_k))
+  rotMat = tf.matmul(tf.matmul(xmat, ymat), zmat)
+  return rotMat
 
-    dc_loss = loss_disp_left+loss_disp_right
+def pose_vec2mat(translation,rotation):
+  """Converts 6DoF parameters to transformation matrix
+  Args:
+      vec: 6DoF parameters in the order of tx, ty, tz, rx, ry, rz -- [B, 6]
+  Returns:
+      A transformation matrix -- [B, 4, 4]
+  """
+  batch_size, _ = translation.get_shape().as_list()
+  translation = tf.expand_dims(translation, -1)
+  rx = tf.slice(rotation, [0, 0], [-1, 1])
+  ry = tf.slice(rotation, [0, 1], [-1, 1])
+  rz = tf.slice(rotation, [0, 2], [-1, 1])
+  rot_mat = euler2mat(rz, ry, rx)
+  rot_mat = tf.squeeze(rot_mat, axis=[1])
+  filler = tf.constant([0.0, 0.0, 0.0, 1.0], shape=[1, 1, 4])
+  filler = tf.tile(filler, [batch_size, 1, 1])
+  transform_mat = tf.concat([rot_mat, translation], axis=2)
+  transform_mat = tf.concat([transform_mat, filler], axis=1)
+  return transform_mat
 
-    return dc_loss+photo_loss
- 
+def pixel2cam(depth, pixel_coords, intrinsics, is_homogeneous=True):
+  """Transforms coordinates in the pixel frame to the camera frame.
+  Args:
+    depth: [batch, height, width]
+    pixel_coords: homogeneous pixel coordinates [batch, 3, height, width]
+    intrinsics: camera intrinsics [batch, 3, 3]
+    is_homogeneous: return in homogeneous coordinates
+  Returns:
+    Coords in the camera frame [batch, 3 (4 if homogeneous), height, width]
+  """
+  batch, height, width = depth.get_shape().as_list()
+  depth = tf.reshape(depth, [batch, 1, -1])
+  pixel_coords = tf.reshape(pixel_coords, [batch, 3, -1])
+  cam_coords = tf.matmul(tf.matrix_inverse(intrinsics), pixel_coords) * depth
+  if is_homogeneous:
+    ones = tf.ones([batch, 1, height*width])
+    cam_coords = tf.concat([cam_coords, ones], axis=1)
+  cam_coords = tf.reshape(cam_coords, [batch, -1, height, width])
+  return cam_coords
+
+def cam2pixel(cam_coords, proj):
+  """Transforms coordinates in a camera frame to the pixel frame.
+  Args:
+    cam_coords: [batch, 4, height, width]
+    proj: [batch, 4, 4]
+  Returns:
+    Pixel coordinates projected from the camera frame [batch, height, width, 2]
+  """
+  batch, _, height, width = cam_coords.get_shape().as_list()
+  cam_coords = tf.reshape(cam_coords, [batch, 4, -1])
+  unnormalized_pixel_coords = tf.matmul(proj, cam_coords)
+  x_u = tf.slice(unnormalized_pixel_coords, [0, 0, 0], [-1, 1, -1])
+  y_u = tf.slice(unnormalized_pixel_coords, [0, 1, 0], [-1, 1, -1])
+  z_u = tf.slice(unnormalized_pixel_coords, [0, 2, 0], [-1, 1, -1])
+  x_n = x_u / (z_u + 1e-10)
+  y_n = y_u / (z_u + 1e-10)
+  pixel_coords = tf.concat([x_n, y_n], axis=1)
+  pixel_coords = tf.reshape(pixel_coords, [batch, 2, height, width])
+  return tf.transpose(pixel_coords, perm=[0, 2, 3, 1])
+
+def meshgrid(batch, height, width, is_homogeneous=True):        
+      """Construct a 2D meshgrid.
+      Args:
+        batch: batch size
+        height: height of the grid
+        width: width of the grid
+        is_homogeneous: whether to return in homogeneous coordinates
+      Returns:
+        x,y grid coordinates [batch, 2 (3 if homogeneous), height, width]
+      """
+      """
+      x_t = tf.matmul(tf.ones(shape=tf.stack([height, 1])),
+                      tf.transpose(tf.expand_dims(
+                          tf.linspace(-1.0, 1.0, width), 1), [1, 0]))
+      y_t = tf.matmul(tf.expand_dims(tf.linspace(-1.0, 1.0, height), 1),
+                      tf.ones(shape=tf.stack([1, width])))
+      x_t = (x_t + 1.0) * 0.5 * tf.cast(width - 1, tf.float32)
+      y_t = (y_t + 1.0) * 0.5 * tf.cast(height - 1, tf.float32)
+      """
+      width_f = tf.cast(width,tf.float32)
+      height_f = tf.cast(height,tf.float32)
+      x_t,y_t = tf.meshgrid(tf.linspace(0.0,width_f,width),tf.linspace(0.0,height_f,height))
+      if is_homogeneous:
+        ones = tf.ones_like(x_t)
+        coords = tf.stack([x_t, y_t, ones], axis=0)
+      else:
+        coords = tf.stack([x_t, y_t], axis=0)
+      coords = tf.tile(tf.expand_dims(coords, 0), [batch, 1, 1, 1])
+      return coords
+
+def projective_inverse_warp(img, depth, pose, intrinsics):
+  """Inverse warp a source image to the target image plane based on projection.
+  Args:
+    img: the source image [batch, height_s, width_s, 3]
+    depth: depth map of the target image [batch, height_t, width_t]
+    pose: target to source camera transformation matrix [batch, 6], in the
+          order of tx, ty, tz, rx, ry, rz
+    intrinsics: camera intrinsics [batch, 3, 3]
+  Returns:
+    Source image inverse warped to the target image plane [batch, height_t,
+    width_t, 3]
+  """
+  batch, height, width, _ = img.get_shape().as_list()
+  # Convert pose vector to matrix
+  pose = pose_vec2mat(pose)
+  # Construct pixel grid coordinates
+  pixel_coords = meshgrid(batch, height, width)
+  # Convert pixel coordinates to the camera frame
+  cam_coords = pixel2cam(depth, pixel_coords, intrinsics)
+  # Construct a 4x4 intrinsic matrix (TODO: can it be 3x4?)
+  filler = tf.constant([0.0, 0.0, 0.0, 1.0], shape=[1, 1, 4])
+  filler = tf.tile(filler, [batch, 1, 1])
+  intrinsics = tf.concat([intrinsics, tf.zeros([batch, 3, 1])], axis=2)
+  intrinsics = tf.concat([intrinsics, filler], axis=1)
+  # Get a 4x4 transformation matrix from 'target' camera frame to 'source'
+  # pixel frame.
+  proj_tgt_cam_to_src_pixel = tf.matmul(intrinsics, pose)
+  src_pixel_coords = cam2pixel(cam_coords, proj_tgt_cam_to_src_pixel)
+  output_img = bilinear_sampler_1d_h(img, src_pixel_coords)
+  return output_img 
