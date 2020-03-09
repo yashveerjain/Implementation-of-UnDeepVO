@@ -120,5 +120,5 @@ class depth_estimation(Model):
         dcx6 = self.deconv6(dcx5,cx1)
         dcx7 = self.deconv7(dcx6,deconv=True)
         #disp = self.Disp_const*self.disp(dcx7)+self.epsilon
-        disp = self.disp(dcx7)#+self.epsilon
+        disp = self.disp(dcx7)+self.epsilon
         return dcx7,disp

@@ -41,16 +41,16 @@ def dept_est_loss(depth_prediction_left,depth_prediction_right,left_image,right_
 
 
     ##spatial loss
-    left_generate_image = generate_image_left(right_image,right_disparity_k)
-    right_generate_image = generate_image_right(left_image,left_disparity_k)
+    left_generate_image = generate_image_left(imageright_k,right_disparity_k)
+    right_generate_image = generate_image_right(imageleft_k,left_disparity_k)
     ##photometric_loss(left_image,right_generate_image,right_image,left_generate_image):
     lambd_s = 0.5 #weight is used for ssim and l1 loss
-    loss_ssim_left = tf.reduce_mean(SSIM(left_image,left_generate_image))
-    loss_l1_left = (tf.reduce_mean(tf.abs(left_image-left_generate_image)))
+    loss_ssim_left = tf.reduce_mean(SSIM(imageleft_k,left_generate_image))
+    loss_l1_left = (tf.reduce_mean(tf.abs(imageleft_k-left_generate_image)))
     loss_left = lambd_s*loss_ssim_left+(1-lambd_s)*loss_l1_left
 
-    loss_ssim_right = tf.reduce_mean(SSIM(right_image,right_generate_image))   
-    loss_l1_right = (tf.reduce_mean(tf.abs(right_image-right_generate_image)))
+    loss_ssim_right = tf.reduce_mean(SSIM(imageright_k,right_generate_image))   
+    loss_l1_right = (tf.reduce_mean(tf.abs(imageright_k-right_generate_image)))
     loss_right = lambd_s*loss_ssim_right+(1-lambd_s)*loss_l1_right
 
     photo_loss = loss_left+loss_right
