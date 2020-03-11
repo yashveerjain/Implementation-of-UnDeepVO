@@ -66,3 +66,46 @@ def dept_est_loss(depth_prediction_left,depth_prediction_right,left_image,right_
 
     return dc_loss+photo_loss
  
+
+def pose_est_loss(rot_right,rot_left,t_left,t_right,pk,pk1,intrinsics,depth):
+    """
+    argument :
+    rot_right,t_right is the rotation and translation matrix when feeding the right image of the stereo each consist of shape [batch,3]
+    rot_left,t_left is the rotation and translation matrix when feeding the left image of the stereo
+    pk is the pixel in the current frame (of right image) [batch,image_height,image_width,3]
+    pk1 which is p_k+1 is the next frame pixel or next image (of right image) [batch,image_height,image_width,3]
+    intrinsic is the intrinsic parameter of the camera [batch,3,3]
+    depth the depth is the prediction from the depth_estimation architecture [batch,image_height,image_width,2]
+    """
+    ##Spatial loss
+    #Pose consistency loss
+    lambd_p = 0.5
+    lambd_o = 0.5
+
+    photo_spatial_loss = lambd_p*tf.reduce_mean(tf.abs(t_right-t_left))+lambd_o*tf.reduce_mean(tf.abs(rot_right-rot_left))
+
+    ##Temporal loss
+    translate = t_right
+    rotate = rot_right
+    #loss for predicting the pk+1
+    lambd = 0.5
+    pk1_pred = projective_inverse_warp(pk, depth, translate,rotate, intrinsics)
+    ssim_loss_pk1 = tf.reduce_mean(SSIM(pk1,pk1_pred))
+    l1_loss_pk1 = tf.reduce_mean(tf.abs(tf.subtract(pk1_pred,pk1)))
+    loss_pk1 = lambd*ssim_loss_pk1+(1-lambd)*l1_loss_pk1
+    
+    ##loss for predicting the pk
+    lambd = 0.5
+    pk_pred = projective_inverse_warp(pk, depth, translate,rotate, intrinsics,inv=True)
+    ssim_loss_pk = tf.reduce_mean(SSIM(pk,pk_pred))
+    l1_loss_pk = tf.reduce_mean(tf.abs(tf.subtract(pk_pred,pk)))
+    loss_pk = lambd*ssim_loss_pk+(1-lambd)*l1_loss_pk
+    
+    photo_temp_loss = loss_pk+loss_pk1
+    
+    #3D geometry loss
+    ##TODO
+    
+    total_loss = photo_spatial_loss+photo_temp_loss
+    return  total_loss
+    

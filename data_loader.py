@@ -1,6 +1,26 @@
 import os
 import tensorflow as tf
 import cv2
+import numpy as np
+
+
+def load_intrinsic(intrinsic_dir,batch_for_training = 1):
+    ##intrinsic parameter data loader
+    calib_file_list = sorted(os.listdir(intrinsic_dir))
+    file = open(intrinsic_dir+calib_file_list[0])
+    #intrinsic_row = []
+    intrinsic_list = []
+    for line in file:
+        data = line.split()
+        if 'K_03:'==data[0]:
+            for d in data[1:]:
+                intrinsic_list.append(float(d))
+    intr = np.array(intrinsic_list,dtype = np.float32).reshape(3,3)
+    intrinsic = tf.convert_to_tensor(intr,tf.float32)
+    intrinsic = tf.expand_dims(intrinsic,axis=0)
+    intrinsic = tf.tile(intrinsic,[batch_for_training,1,1])
+    return intrinsic
+                
 
 def data_loader_without_batch(left_image_dir,right_image_dir,image_width,image_height,number_of_data=None):
     training_data = []
@@ -33,7 +53,8 @@ def data_loader_without_batch(left_image_dir,right_image_dir,image_width,image_h
         training_data.append([train_left_image,train_right_image])
     return training_data
 
-def data_loader_with_batch(left_image_dir,right_image_dir,image_width,image_height,batch=2,number_of_data=None):
+def data_loader_with_batch(left_image_dir,right_image_dir,image_width,image_height,batch_for_training=2,number_of_data=None):
+    batch = batch_for_training
     training_data = []
     left = sorted(os.listdir(left_image_dir))
     right = sorted(os.listdir(right_image_dir))
