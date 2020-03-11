@@ -96,7 +96,7 @@ def pose_est_loss(rot_right,rot_left,t_left,t_right,pk,pk1,intrinsics,depth):
     
     ##loss for predicting the pk
     lambd = 0.5
-    pk_pred = projective_inverse_warp(pk, depth, translate,rotate, intrinsics,inv=True)
+    pk_pred = projective_inverse_warp(pk1, depth, translate,rotate, intrinsics,inv=True)
     ssim_loss_pk = tf.reduce_mean(SSIM(pk,pk_pred))
     l1_loss_pk = tf.reduce_mean(tf.abs(tf.subtract(pk_pred,pk)))
     loss_pk = lambd*ssim_loss_pk+(1-lambd)*l1_loss_pk
